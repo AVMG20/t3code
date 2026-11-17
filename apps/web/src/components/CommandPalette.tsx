@@ -304,6 +304,7 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
         groups: [{ value: "themes", label: "Change theme", items: [] }],
       };
     case "search":
+    case "threads":
     case undefined:
       return null;
   }
@@ -428,6 +429,8 @@ function OpenCommandPaletteDialog(props: {
       },
   );
   const linkedThreadSearch = initialSearch.linkedThreadSearch;
+  // Global search (projectSearch.toggle) finds threads only: titles, branches, projects, messages.
+  const [threadsOnly] = useState(() => props.openIntent?.kind === "threads");
   // Rows were captured when the palette opened; drop any hidden since then.
   const hiddenKeys = useHiddenThreadKeys();
   const linkedEnvironmentId = linkedThreadSearch?.linkedThreads?.environmentId ?? null;
@@ -442,7 +445,7 @@ function OpenCommandPaletteDialog(props: {
   const { query, views: viewStack } = searchState;
   const setQuery = (query: string) => dispatchSearch({ type: "query", query });
   const deferredQuery = useDeferredValue(query);
-  const isActionsOnly = deferredQuery.startsWith(">");
+  const isActionsOnly = !threadsOnly && deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
   // A pushed view drops the typed highlight until the user moves it again.
@@ -676,7 +679,10 @@ function OpenCommandPaletteDialog(props: {
         )
       : "";
   const canBrowsePaths =
-    browseEnvironmentId !== null && !isRemoteProjectRepositoryStep && newProjectFlow === null;
+    !threadsOnly &&
+    browseEnvironmentId !== null &&
+    !isRemoteProjectRepositoryStep &&
+    newProjectFlow === null;
   const browsePath = getFilesystemBrowsePath(query, browseEnvironmentPlatform, canBrowsePaths);
   const isBrowsing = browsePath.isBrowsing;
   const browseDirectoryPath = browsePath.directoryPath;
@@ -1560,7 +1566,6 @@ function OpenCommandPaletteDialog(props: {
     title: "Search project contents",
     icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
-    shortcutCommand: "projectSearch.toggle",
     run: async () => {
       openChildSearch("content", { query, linkedThreadSearch });
     },
@@ -1781,7 +1786,10 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = buildRootGroups({
+    actionItems: threadsOnly ? [] : actionItems,
+    recentThreadItems,
+  });
   // Every setting goes to the palette's own matcher, so settings get the same
   // word starts and typo tolerance as threads.
   const settingsSearchItems: CommandPaletteActionItem[] = settingsForThisPlatform(
@@ -1836,7 +1844,7 @@ function OpenCommandPaletteDialog(props: {
     activeGroups,
     query: deferredQuery,
     isInSubmenu: currentView !== null,
-    ...(deferredQuery.trim().length > 0
+    ...(deferredQuery.trim().length > 0 && !threadsOnly
       ? {
           allOptions: {
             rootGroups,
@@ -1844,8 +1852,8 @@ function OpenCommandPaletteDialog(props: {
           },
         }
       : {}),
-    projectSearchItems: projectSearchItems,
-    settingsSearchItems,
+    projectSearchItems: threadsOnly ? [] : projectSearchItems,
+    settingsSearchItems: threadsOnly ? [] : settingsSearchItems,
     threadSearchItems:
       isLinkedThreadSearch && linkedThreadSearch?.linkedThreads
         ? buildLinkedThreadActionItems({
@@ -2477,7 +2485,9 @@ function OpenCommandPaletteDialog(props: {
     newProjectFlow !== null
       ? "Project name"
       : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
-        getCommandPaletteInputPlaceholder(paletteMode));
+        (threadsOnly && paletteMode === "root"
+          ? "Search threads, branches, and messages..."
+          : getCommandPaletteInputPlaceholder(paletteMode)));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canWriteSourceControl = useEnvironmentScope(

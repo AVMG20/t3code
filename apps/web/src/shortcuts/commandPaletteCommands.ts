@@ -94,7 +94,10 @@ export function installCommandPaletteCommands(
       },
       "commandPalette.toggle": toggleOverlay("commandPalette.toggle"),
       "filePicker.toggle": toggleOverlay("filePicker.toggle"),
-      "projectSearch.toggle": toggleOverlay("projectSearch.toggle"),
+      "projectSearch.toggle": (event) => {
+        consume(event);
+        dispatchCommandPalette({ _tag: "ToggleThreadSearch" });
+      },
     },
     {
       ...options,

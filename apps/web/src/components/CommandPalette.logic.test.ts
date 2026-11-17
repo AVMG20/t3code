@@ -108,6 +108,21 @@ describe("reduceCommandPaletteUiState", () => {
       session: 2,
     });
   });
+
+  it("toggles thread search open and closed, and switches an open palette to it", () => {
+    let state: CommandPaletteUiState = {
+      open: false,
+      mode: "command",
+      openIntent: null,
+      session: 0,
+    };
+    state = reduceCommandPaletteUiState(state, { _tag: "ToggleThreadSearch" });
+    expect(state).toMatchObject({ open: true, openIntent: { kind: "threads" }, session: 1 });
+    expect(reduceCommandPaletteUiState(state, { _tag: "ToggleThreadSearch" }).open).toBe(false);
+    state = reduceCommandPaletteUiState(state, { _tag: "ToggleMode", mode: "files" });
+    state = reduceCommandPaletteUiState(state, { _tag: "ToggleThreadSearch" });
+    expect(state).toMatchObject({ open: true, mode: "command", openIntent: { kind: "threads" } });
+  });
 });
 
 describe("resolveAddProjectEntry", () => {
