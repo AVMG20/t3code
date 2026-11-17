@@ -2443,6 +2443,13 @@ export const layerWsRpc = (
               yield* providerRegistry.refreshModelCatalog;
               return { providers: [] };
             }
+            if (input.usage === true && input.instanceId !== undefined) {
+              const instance = yield* providerInstances.getInstance(input.instanceId);
+              if (instance?.snapshot.refreshUsage) {
+                yield* instance.snapshot.refreshUsage.pipe(Effect.ignoreCause({ log: true }));
+              }
+              return { providers: [] };
+            }
             if (input.refreshModels) {
               yield* providerRegistry.invalidateModelCaches({
                 instanceId: input.instanceId,

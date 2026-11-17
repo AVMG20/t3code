@@ -102,6 +102,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
+  const mixedRememberModel = useScopedSettingsMixed(["rememberLastModel"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
@@ -197,6 +198,38 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       }
     />
   );
+  const rememberModelRow = (
+    <SettingsRow
+      serverScoped
+      settingKeys={["rememberLastModel"]}
+      mixed={mixedRememberModel}
+      id="remember-last-model"
+      title="Remember last model"
+      description={
+        isProjectScope
+          ? "Sending a message saves its model as this project's model for new threads."
+          : "Sending a message saves its model as the project's model for new threads. Projects can turn it off."
+      }
+      resetAction={
+        settings.rememberLastModel ? null : (
+          <SettingResetButton
+            label="remember last model"
+            tooltip="Reset remember last model to on"
+            onClick={() => updateSettings({ rememberLastModel: true })}
+          />
+        )
+      }
+      control={
+        <Switch
+          aria-label="Remember last model"
+          mixed={mixedRememberModel}
+          checked={mixedRememberModel ? false : settings.rememberLastModel}
+          onCheckedChange={(enabled) => updateSettings({ rememberLastModel: enabled })}
+        />
+      }
+    />
+  );
+
   const workspaceRow = (
     <SettingsRow
       serverScoped
@@ -332,12 +365,14 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       {category === "project" ? (
         <>
           {modelRow}
+          {rememberModelRow}
           {fallbackRow}
           {workspaceRow}
         </>
       ) : category === "general" ? (
         <>
           {modelRow}
+          {rememberModelRow}
           {fallbackRow}
           <SettingsRow
             serverScoped

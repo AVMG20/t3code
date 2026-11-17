@@ -516,31 +516,24 @@ export type ChangesLineTotals = {
 // working tree and the Changes row read +0 while Diff still showed the work.
 // The Diff panel's branch comparison wins when it has file stats, so a remembered base or
 // hidden whitespace reads the same in the row as in the panel.
-export function resolveChangesTotals(
+/** Uncommitted line totals: the working-tree preview when loaded, else the status snapshot. */
+export function resolveUncommittedTotals(
   status: VcsStatusResult | null | undefined,
-  branchPreview?: ReviewDiffPreviewSource | null,
+  workingTreePreview?: ReviewDiffPreviewSource | null,
 ): ChangesLineTotals | null {
-  if (branchPreview?.files) {
+  if (workingTreePreview?.files) {
     let insertions = 0;
     let deletions = 0;
-    for (const file of branchPreview.files) {
+    for (const file of workingTreePreview.files) {
       insertions += file.additions;
       deletions += file.deletions;
     }
-    return { insertions, deletions, baseRef: branchPreview.baseRef };
+    return { insertions, deletions, baseRef: null };
   }
   if (!status) return null;
-  const branch = status.branchChanges;
-  const tree = { ...status.workingTree, baseRef: null };
-  const selected =
-    branch && (branch.insertions > 0 || branch.deletions > 0)
-      ? branch
-      : tree.insertions > 0 || tree.deletions > 0
-        ? tree
-        : (branch ?? tree);
   return {
-    insertions: selected.insertions,
-    deletions: selected.deletions,
-    baseRef: selected.baseRef,
+    insertions: status.workingTree.insertions,
+    deletions: status.workingTree.deletions,
+    baseRef: null,
   };
 }

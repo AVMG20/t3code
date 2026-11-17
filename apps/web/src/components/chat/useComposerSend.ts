@@ -148,6 +148,10 @@ import type { useQueuedRunEdit } from "./useQueuedRunEdit";
 import type { useTimelineFollow } from "./useTimelineFollow";
 import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
+import { rememberProjectModelPatch } from "../../lib/rememberProjectModel";
+import { readEnvironment } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
@@ -345,6 +349,9 @@ export function useComposerSend(input: ComposerSendInput) {
   const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
   const clientSettingsHydrated = useClientSettingsHydrated();
+  const persistServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -1337,6 +1344,16 @@ export function useComposerSend(input: ComposerSendInput) {
           )
         : null;
       if (backgroundThreadRef) beginBackgroundDraftSubmissionByRef(backgroundThreadRef);
+      const projectSettings = readEnvironment(activeProject.environmentId)?.serverConfig?.settings;
+      const rememberPatch = projectSettings
+        ? rememberProjectModelPatch(projectSettings, activeProject.id, ctxSelectedModelSelection)
+        : null;
+      if (rememberPatch) {
+        void persistServerSettings({
+          environmentId: activeProject.environmentId,
+          input: { patch: rememberPatch },
+        });
+      }
       const startPromise = startThreadTurn({
         environmentId,
         input: {

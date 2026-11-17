@@ -53,7 +53,7 @@ import {
   type GitQuickAction,
   type DefaultBranchConfirmableAction,
   requiresDefaultBranchConfirmation,
-  resolveChangesTotals,
+  resolveUncommittedTotals,
   resolveDefaultBranchActionDialogCopy,
   resolveFeatureBranchUnavailableReason,
   resolveGitActionProgressPresentation,
@@ -99,11 +99,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { reviewEnvironment } from "~/state/review";
 import { revisionedQuery } from "~/state/revisionedQuery";
-import {
-  selectThreadBranchBaseRef,
-  useDiffPanelSessionStore,
-  useDiffPanelStore,
-} from "~/diffPanelStore";
+import { useDiffPanelSessionStore } from "~/diffPanelStore";
 import { useClientSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
@@ -1040,9 +1036,6 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
-  const changesBaseRef = useDiffPanelStore((state) =>
-    selectThreadBranchBaseRef(state, activeThreadRef),
-  );
   const ignoreWhitespaceSetting = useClientSettings((settings) => settings.diffIgnoreWhitespace);
   const ignoreWhitespace =
     useDiffPanelSessionStore((state) => state.ignoreWhitespace) ?? ignoreWhitespaceSetting;
@@ -1073,26 +1066,22 @@ export default function GitActionsControl({
             environmentId: activeEnvironmentId,
             input: {
               cwd: gitCwd,
-              ...(changesBaseRef ? { baseRef: changesBaseRef } : {}),
               ignoreWhitespace,
               metadataOnly: true,
-              sourceKind: "branch-range",
+              sourceKind: "working-tree",
             },
           }),
           changesRevision,
         )
       : null,
   );
-  const resolvedChangesTotals = resolveChangesTotals(
+  // The row counts uncommitted work only, matching the diff panel's default scope.
+  const resolvedChangesTotals = resolveUncommittedTotals(
     gitStatusForActions,
-    changesPreview.data?.sources.find((source) => source.kind === "branch-range"),
+    changesPreview.data?.sources.find((source) => source.kind === "working-tree"),
   );
   const changesTotals = resolvedChangesTotals ?? { insertions: 0, deletions: 0 };
-  const changesBaseLabel = resolvedChangesTotals
-    ? resolvedChangesTotals.baseRef === null
-      ? "Uncommitted"
-      : `vs ${resolvedChangesTotals.baseRef}`
-    : null;
+  const changesBaseLabel = resolvedChangesTotals ? "Uncommitted" : null;
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   // Changed-file paths are repository-relative, so they must resolve against

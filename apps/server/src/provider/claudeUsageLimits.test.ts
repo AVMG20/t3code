@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { claudeRateLimitEventToUpdate, claudeUsageResponseToLimits } from "./claudeUsageLimits.ts";
+import {
+  claudeRateLimitEventToUpdate,
+  claudeUsageResponseToLimits,
+  withGatewayModelScoped,
+} from "./claudeUsageLimits.ts";
 
 const checkedAt = "2026-07-18T10:00:00.000Z";
 const noNames = { overageIncluded: undefined } as const;
@@ -236,6 +240,27 @@ describe("claudeUsageResponseToLimits", () => {
       limit: { ...rateLimits.spend.limit, amount_minor: 0 },
     };
     expect(claudeUsageResponseToLimits({ checkedAt, response }).limits.windows).toEqual([]);
+  });
+});
+
+describe("withGatewayModelScoped", () => {
+  it("reads a gateway's top-level seven_day_<model> keys as model-scoped weekly windows", () => {
+    const body = withGatewayModelScoped({
+      five_hour: { utilization: 2, resets_at: "2026-11-16T15:20:00.000Z" },
+      seven_day: { utilization: 29, resets_at: "2026-11-19T17:00:00.000Z" },
+      seven_day_fable: { utilization: 15, resets_at: "2026-11-19T17:00:00.000Z" },
+      seven_day_oauth_apps: { utilization: 1, resets_at: null },
+      seven_day_opus: null,
+    });
+    const { limits } = claudeUsageResponseToLimits({
+      response: { rate_limits_available: true, rate_limits: body as never },
+      checkedAt: "2026-11-16T11:00:00.000Z",
+    });
+    expect(limits.windows.map((window) => [window.id, window.label, window.usedPercent])).toEqual([
+      ["five_hour", expect.any(String), 2],
+      ["seven_day", expect.any(String), 29],
+      ["seven_day_fable", "Weekly · Fable", 15],
+    ]);
   });
 });
 

@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -239,3 +240,64 @@ export const recordClaudeUsageResponse = (
   const { limits, names } = claudeUsageResponseToLimits(input);
   return Ref.set(namesRef, names).pipe(Effect.as(limits));
 };
+
+const GATEWAY_NON_MODEL_WEEKLY = new Set(["oauth_apps", "overage_included", "cowork"]);
+
+/**
+ * Gateways report a model's weekly allowance as a top-level `seven_day_<model>` key
+ * (e.g. `seven_day_fable`); read them as `model_scoped` rows when none are given.
+ */
+export function withGatewayModelScoped(body: object): object {
+  if (Array.isArray((body as { readonly model_scoped?: unknown }).model_scoped)) return body;
+  const modelScoped: ModelScopedWindow[] = [];
+  for (const [key, value] of Object.entries(body)) {
+    if (!key.startsWith(SCOPED_WINDOW_PREFIX)) continue;
+    const model = key.slice(SCOPED_WINDOW_PREFIX.length);
+    if (model === "" || GATEWAY_NON_MODEL_WEEKLY.has(model)) continue;
+    if (typeof value !== "object" || value === null) continue;
+    const { utilization, resets_at } = value as {
+      readonly utilization?: unknown;
+      readonly resets_at?: unknown;
+    };
+    if (typeof utilization !== "number") continue;
+    modelScoped.push({
+      display_name: model
+        .split("_")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" "),
+      utilization,
+      resets_at: typeof resets_at === "string" ? resets_at : null,
+    });
+  }
+  return modelScoped.length > 0 ? { ...body, model_scoped: modelScoped } : body;
+}
+
+/** A gateway's usage endpoint, called with the same bearer token the CLI sends it. */
+export const fetchClaudeGatewayUsage = Effect.fn("fetchClaudeGatewayUsage")(
+  function* (input: { readonly url: string; readonly token: string; readonly checkedAt: string }) {
+    const client = yield* HttpClient.HttpClient;
+    const response = yield* client.execute(
+      HttpClientRequest.get(input.url).pipe(
+        HttpClientRequest.setHeaders({
+          authorization: `Bearer ${input.token}`,
+          accept: "application/json",
+        }),
+      ),
+    );
+    const body = yield* HttpClientResponse.filterStatusOk(response).pipe(
+      Effect.flatMap((ok) => ok.json),
+    );
+    if (!body || typeof body !== "object") return undefined;
+    return claudeUsageResponseToLimits({
+      response: {
+        rate_limits_available: true,
+        rate_limits: withGatewayModelScoped(body) as NonNullable<
+          SDKControlGetUsageResponse["rate_limits"]
+        >,
+      },
+      checkedAt: input.checkedAt,
+    }).limits;
+  },
+  Effect.timeout("10 seconds"),
+  Effect.orElseSucceed((): ServerProviderUsageLimits | undefined => undefined),
+);

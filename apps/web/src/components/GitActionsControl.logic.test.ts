@@ -7,7 +7,7 @@ import {
   type DefaultBranchConfirmableAction,
   hasUsableGitMenuContent,
   requiresDefaultBranchConfirmation,
-  resolveChangesTotals,
+  resolveUncommittedTotals,
   resolveDefaultBranchActionDialogCopy,
   resolveFeatureBranchUnavailableReason,
   resolveLiveThreadBranchUpdate,
@@ -297,13 +297,12 @@ describe("resolveAutoFeatureBranchName", () => {
   });
 });
 
-describe("resolveChangesTotals", () => {
-  it("does not let an empty branchChanges hide a dirty working tree", () => {
-    assert.deepInclude(
-      resolveChangesTotals(
+describe("resolveUncommittedTotals", () => {
+  it("counts only the working tree, never the branch range", () => {
+    assert.deepEqual(
+      resolveUncommittedTotals(
         status({
-          hasWorkingTreeChanges: true,
-          branchChanges: { baseRef: "main", insertions: 0, deletions: 0 },
+          branchChanges: { baseRef: "origin/main", insertions: 40_000, deletions: 300 },
           workingTree: {
             files: [{ path: "a.ts", insertions: 5, deletions: 1 }],
             insertions: 5,
@@ -311,69 +310,27 @@ describe("resolveChangesTotals", () => {
           },
         }),
       ),
-      { insertions: 5, deletions: 1 },
+      { insertions: 5, deletions: 1, baseRef: null },
     );
   });
 
-  it("keeps non-zero branchChanges over the working tree", () => {
+  it("prefers the working-tree preview's file stats when loaded", () => {
     assert.deepEqual(
-      resolveChangesTotals(
-        status({
-          branchChanges: { baseRef: "origin/master", insertions: 20, deletions: 3 },
-          workingTree: {
-            files: [{ path: "a.ts", insertions: 1, deletions: 0 }],
-            insertions: 1,
-            deletions: 0,
-          },
-        }),
-      ),
-      { insertions: 20, deletions: 3, baseRef: "origin/master" },
-    );
-  });
-
-  it("uses the panel's branch comparison when it has file stats", () => {
-    const dirty = status({
-      branchChanges: { baseRef: "main", insertions: 20, deletions: 3 },
-    });
-    const source = {
-      id: "branch-range",
-      kind: "branch-range",
-      title: "Changes vs release",
-      baseRef: "release",
-      headRef: "feature/test",
-      diff: "",
-      diffHash: "hash",
-      truncated: false,
-    } as const;
-    assert.deepEqual(
-      resolveChangesTotals(dirty, {
-        ...source,
+      resolveUncommittedTotals(status({}), {
+        id: "working-tree",
+        kind: "working-tree",
+        title: "Uncommitted changes",
+        baseRef: "HEAD",
+        headRef: "feature/test",
+        diff: "",
+        diffHash: "hash",
+        truncated: false,
         files: [
           { path: "a.ts", previousPath: null, additions: 4, deletions: 1 },
           { path: "b.ts", previousPath: null, additions: 2, deletions: 0 },
         ],
       }),
-      { insertions: 6, deletions: 1, baseRef: "release" },
-    );
-    assert.deepEqual(resolveChangesTotals(dirty, source), {
-      insertions: 20,
-      deletions: 3,
-      baseRef: "main",
-    });
-  });
-
-  it("falls back to the working tree when branchChanges is omitted", () => {
-    assert.deepInclude(
-      resolveChangesTotals(
-        status({
-          workingTree: {
-            files: [{ path: "a.ts", insertions: 2, deletions: 0 }],
-            insertions: 2,
-            deletions: 0,
-          },
-        }),
-      ),
-      { insertions: 2, deletions: 0 },
+      { insertions: 6, deletions: 1, baseRef: null },
     );
   });
 });

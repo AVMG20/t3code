@@ -670,6 +670,11 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
     /** Read secret references again; unlocking a vault can prompt on the host, so only explicit user refreshes ask. */
     reloadSecrets: Schema.optional(Schema.Boolean),
     /**
+     * With `instanceId`: refetch only that instance's usage limits, bypassing its probe cache.
+     * Replies with no providers; the config stream carries the result.
+     */
+    usage: Schema.optional(Schema.Boolean),
+    /**
      * Reply without snapshots, or with only the requested instance's cwd snapshot. Snapshots then
      * reach the client only through these replies, so another client's scan shows on its next
      * refresh, at most one TTL later.

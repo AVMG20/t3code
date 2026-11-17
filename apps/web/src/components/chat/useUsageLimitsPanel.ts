@@ -66,6 +66,13 @@ export function useUsageLimitsPanel(input: {
     toastManager.add({ type: "info", title: "Usage limits are unavailable for this provider" });
     return false;
   });
+  const toggle = useStableCallback(() => {
+    if (panel !== null && panel.key === panelKey) {
+      setPanel(null);
+      return false;
+    }
+    return open();
+  });
   // Async responses may clear only their originating thread's panel.
   const clearFor = useStableCallback((originThreadKey: string) =>
     setPanel((current) =>
@@ -73,5 +80,5 @@ export function useUsageLimitsPanel(input: {
     ),
   );
 
-  return { banner, offered, open, clearFor };
+  return { banner, offered, open, toggle, clearFor };
 }

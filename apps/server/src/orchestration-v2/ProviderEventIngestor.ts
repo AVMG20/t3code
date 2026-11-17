@@ -32,6 +32,7 @@ import {
   type ProviderTurnAnalyticsContext,
 } from "../telemetry/ProviderUsageAnalytics.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { makeUsageRefreshScheduler } from "../provider/usageRefreshScheduler.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { UsageLimitResetFallback } from "../usage/UsageLimitSources.ts";
 import * as EventSink from "./EventSink.ts";
@@ -260,6 +261,17 @@ export const layer: Layer.Layer<
     const usageLimitResets = yield* UsageLimitResetFallback;
     const scope = yield* Effect.scope;
     const completedTurnAnalytics = new Set<string>();
+    const usageRefresh = yield* makeUsageRefreshScheduler({
+      refresh: (instanceId) =>
+        instances.getInstance(instanceId).pipe(
+          Effect.flatMap((instance) => instance?.snapshot.refreshUsage ?? Effect.void),
+          Effect.ignoreCause({ log: true }),
+        ),
+      listInstanceIds: instances.listInstances.pipe(
+        Effect.map((list) => list.map((instance) => instance.instanceId)),
+        Effect.orElseSucceed(() => []),
+      ),
+    });
 
     const makeDomainEvent =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
@@ -790,6 +802,24 @@ export const layer: Layer.Layer<
           },
           (effect, input) =>
             effect.pipe(
+              Effect.tap((storedEvents) =>
+                Effect.gen(function* () {
+                  if (storedEvents.length === 0) return;
+                  if (input.event.type === "provider_turn.updated") {
+                    const turn = input.event.providerTurn;
+                    if (turn.status === "running") {
+                      yield* usageRefresh.turnStarted(input.providerInstanceId, turn.id);
+                    } else if (turn.status !== "pending") {
+                      yield* usageRefresh.turnSettled(input.providerInstanceId, turn.id);
+                    }
+                  } else if (input.event.type === "turn.terminal" && input.event.providerTurnId) {
+                    yield* usageRefresh.turnSettled(
+                      input.providerInstanceId,
+                      input.event.providerTurnId,
+                    );
+                  }
+                }),
+              ),
               Effect.tap((storedEvents) =>
                 Effect.gen(function* () {
                   if (

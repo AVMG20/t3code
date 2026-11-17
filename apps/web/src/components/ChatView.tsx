@@ -1431,6 +1431,7 @@ export default function ChatView(props: ChatViewProps) {
     banner: usageLimitsBanner,
     offered: usageLimitsOffered,
     open: openUsageLimits,
+    toggle: toggleUsageLimits,
     clearFor: clearUsageLimitsFor,
   } = useUsageLimitsPanel({
     environmentId,
@@ -3953,6 +3954,9 @@ export default function ChatView(props: ChatViewProps) {
                   onUpdateProjectScript={updateProjectScriptStable}
                   onDeleteProjectScript={deleteProjectScriptStable}
                   usage={{
+                    environmentId,
+                    onToggleLimits:
+                      usageLimitsOffered && usageLimitsKey !== null ? toggleUsageLimits : undefined,
                     providerInstanceId: activeProviderInstanceId,
                     providers: providerStatuses,
                     sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,

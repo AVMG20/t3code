@@ -1,4 +1,5 @@
 import type {
+  EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
   ServerProviderUsageWindow,
@@ -10,9 +11,14 @@ import {
   type LimitPace,
   limitsNotice,
   paceOf,
-  remainingPercent,
 } from "@t3tools/shared/usageLimits";
-import type { ReactNode } from "react";
+import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
+import { ChevronsUpDownIcon, RefreshCwIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
+
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { barColor, shortWindowLabel } from "../usage/UsageLimits";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -31,6 +37,9 @@ const PACE_LABEL: Record<LimitPace, string> = {
 };
 
 export interface ThreadDetailsUsageInput {
+  readonly environmentId: EnvironmentId;
+  /** Shows or hides the full usage panel above the composer. */
+  readonly onToggleLimits?: (() => void) | undefined;
   readonly providerInstanceId: ProviderInstanceId | null;
   readonly providers: readonly ServerProvider[];
   readonly sources: UsageLimitSourceSnapshots;
@@ -39,12 +48,18 @@ export interface ThreadDetailsUsageInput {
 
 type UsageTone = "error" | "warning" | null;
 
-/** The selected provider's limit windows. Each row reads as room left. */
+/** The selected provider's limit windows, in its profile colour. Each row reads as share used. */
 export function ThreadDetailsUsage({
+  environmentId,
+  onToggleLimits,
   providerInstanceId,
   providers,
   sources,
 }: Omit<ThreadDetailsUsageInput, "contextWindow">) {
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const [refreshing, setRefreshing] = useState(false);
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
   const report =
@@ -53,11 +68,23 @@ export function ThreadDetailsUsage({
       : null;
   // Only this instance's data: the report keeps one instance per login, and any other entry may be
   // a different login or workspace, so fall back to the instance's own snapshot.
-  const limits =
-    report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
-    providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits;
-  if (!limits) return null;
+  const account = report?.accounts.find((entry) => entry.instanceId === providerInstanceId);
+  const provider = providers.find((entry) => entry.instanceId === providerInstanceId);
+  const limits = account?.limits ?? provider?.usageLimits;
+  if (!limits || providerInstanceId === null) return null;
   const notice = limitsNotice(limits);
+  const driver = provider?.driver ?? account?.driver;
+  const color =
+    normalizeProviderAccentColor(provider?.accentColor ?? account?.accentColor) ??
+    (driver ? barColor(driver) : "var(--foreground)");
+  const profile = provider?.displayName?.trim() || account?.label || String(providerInstanceId);
+  const refresh = () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    void Promise.resolve(
+      refreshProviders({ environmentId, input: { instanceId: providerInstanceId, usage: true } }),
+    ).finally(() => setRefreshing(false));
+  };
 
   return (
     <ThreadDetailsSection
@@ -65,7 +92,30 @@ export function ThreadDetailsUsage({
       title="Usage limits"
       showHeading={false}
     >
-      <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
+      <div className="mb-0.5 flex h-6 items-center gap-1 px-1 text-xs">
+        <button
+          type="button"
+          onClick={onToggleLimits}
+          disabled={!onToggleLimits}
+          aria-label={`${profile}: toggle usage limits`}
+          className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:hover:bg-transparent dark:hover:bg-white/[0.08]"
+          style={{ color }}
+        >
+          <span className="truncate">{profile}</span>
+          {onToggleLimits ? <ChevronsUpDownIcon className="size-3 shrink-0 opacity-70" /> : null}
+        </button>
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={refreshing}
+          aria-label="Refresh usage limits"
+          className="ms-auto grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 outline-none hover:bg-black/[0.035] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset dark:hover:bg-white/[0.08]"
+        >
+          <RefreshCwIcon className={cn("size-3", refreshing && "animate-spin")} />
+        </button>
+      </div>
+      {/* Fixed label and value widths keep the bars the same length for every profile. */}
+      <div className="grid grid-cols-[4.5rem_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
         {notice ? (
           <UsageRow
             label="Limits"
@@ -75,7 +125,9 @@ export function ThreadDetailsUsage({
             tooltip={<span className="text-foreground">{notice}</span>}
           />
         ) : (
-          limits.windows.map((window) => <LimitRow key={window.id} window={window} now={now} />)
+          limits.windows.map((window) => (
+            <LimitRow key={window.id} window={window} now={now} color={color} />
+          ))
         )}
       </div>
     </ThreadDetailsSection>
@@ -141,25 +193,30 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
 function LimitRow({
   window,
   now,
+  color,
 }: {
   readonly window: ServerProviderUsageWindow;
   readonly now: number;
+  readonly color: string;
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
-  const left = remainingPercent(window);
+  const used = Math.round(Math.max(0, Math.min(100, window.usedPercent)));
   const pace = paceOf(window, now);
   const resetsAt = window.resetsAt ? Date.parse(window.resetsAt) : Number.NaN;
+  const resetsIn = resetsAt > now ? formatDuration(resetsAt - now) : null;
   return (
     <UsageRow
-      label={window.label}
-      fill={left}
-      tone={left <= 10 ? "error" : left <= 20 ? "warning" : null}
-      value={`${left}%`}
-      ariaValue={`${left}% left`}
+      label={shortWindowLabel(window.label)}
+      fill={used}
+      tone={used >= 90 ? "error" : used >= 80 ? "warning" : null}
+      color={color}
+      value={`${used}%`}
+      detail={resetsIn ?? ""}
+      ariaValue={`${used}% used${resetsIn ? `, resets in ${resetsIn}` : ""}`}
       tooltip={
         <>
           <span className="text-foreground">
-            {window.label}: {left}% left
+            {window.label}: {used}% used
           </span>
           {window.resetsAt && resetsAt > now ? (
             <span className="text-muted-foreground">
@@ -179,8 +236,10 @@ function UsageRow({
   label,
   fill,
   tone,
+  color,
   tick = null,
   value,
+  detail = null,
   ariaValue = value,
   tooltip,
   muted = false,
@@ -189,9 +248,13 @@ function UsageRow({
   /** Bar fill from 0 to 100. Null hides the bar. */
   readonly fill: number | null;
   readonly tone: UsageTone;
+  /** Bar colour when no tone applies. */
+  readonly color?: string;
   /** A marker on the bar, from 0 to 100. */
   readonly tick?: number | null;
   readonly value: string;
+  /** Muted text after the value, such as the time to reset, in a fixed-width slot. */
+  readonly detail?: string | null;
   readonly ariaValue?: string;
   readonly tooltip: ReactNode;
   readonly muted?: boolean;
@@ -222,7 +285,10 @@ function UsageRow({
                         ? "bg-muted-foreground"
                         : "bg-foreground/80",
                 )}
-                style={{ width: `max(${fill}%, 6px)` }}
+                style={{
+                  width: `max(${fill}%, 6px)`,
+                  ...(tone === null && color ? { backgroundColor: color } : {}),
+                }}
               />
             ) : null}
             {tick !== null ? (
@@ -248,7 +314,16 @@ function UsageRow({
                   : "text-foreground/80",
           )}
         >
-          {value}
+          {detail === null ? (
+            value
+          ) : (
+            <span className="flex items-center justify-end">
+              <span className="w-8 text-end">{value}</span>
+              <span className="w-16 ps-1.5 text-start font-normal text-muted-foreground">
+                {detail ? `· ${detail}` : ""}
+              </span>
+            </span>
+          )}
         </span>
       </TooltipTrigger>
       {/* Rows sit 8px inside the card; clear its edge instead of overlapping it. */}
