@@ -499,9 +499,11 @@ function hasDuplicateCursorTotal(pool: LimitPool): boolean {
   );
 }
 
-export function displayLimitWindows(pool: LimitPool) {
-  if (pool.driver === "antigravity") {
-    return [...pool.windows].sort(
+export function sortProviderUsageWindows<
+  Window extends Pick<ServerProviderUsageWindow, "id" | "kind">,
+>(driver: ServerProvider["driver"] | undefined, windows: readonly Window[]): readonly Window[] {
+  if (driver === "antigravity") {
+    return [...windows].sort(
       (left, right) =>
         Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
         left.id
@@ -509,6 +511,13 @@ export function displayLimitWindows(pool: LimitPool) {
           .localeCompare(right.id.replace(/-(5h|weekly|quota)$/, "")) ||
         WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind],
     );
+  }
+  return windows;
+}
+
+export function displayLimitWindows(pool: LimitPool) {
+  if (pool.driver === "antigravity") {
+    return sortProviderUsageWindows(pool.driver, pool.windows);
   }
   if (pool.driver !== "cursor") return pool.windows;
   const hasAuto = pool.windows.some((window) => window.id === "autoPercentUsed");

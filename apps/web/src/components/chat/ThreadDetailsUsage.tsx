@@ -11,6 +11,7 @@ import {
   type LimitPace,
   limitsNotice,
   paceOf,
+  sortProviderUsageWindows,
 } from "@t3tools/shared/usageLimits";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import { ChevronsUpDownIcon, RefreshCwIcon } from "lucide-react";
@@ -125,7 +126,7 @@ export function ThreadDetailsUsage({
             tooltip={<span className="text-foreground">{notice}</span>}
           />
         ) : (
-          limits.windows.map((window) => (
+          sortProviderUsageWindows(driver, limits.windows).map((window) => (
             <LimitRow key={window.id} window={window} now={now} color={color} />
           ))
         )}
@@ -190,6 +191,29 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
   );
 }
 
+/** Shortens compound provider labels (such as "Gemini · 5-hour") so they stay distinct in the compact rail. */
+function compactWindowLabel(label: string): string {
+  const shortened = shortWindowLabel(label);
+  const separator = shortened.indexOf(" · ");
+  if (separator === -1) return shortened;
+  const rawFamily = shortened.slice(0, separator).trim();
+  const rawCadence = shortened.slice(separator + 3).trim();
+  const family = rawFamily.startsWith("Claude & GPT")
+    ? "Other"
+    : /^Gemini\s+\d+\s+/i.test(rawFamily)
+      ? rawFamily.replace(/^Gemini\s+\d+\s+/i, "")
+      : rawFamily;
+  const cadence =
+    rawCadence === "5-hour"
+      ? "5h"
+      : rawCadence === "Weekly"
+        ? "7d"
+        : rawCadence === "Reported quota"
+          ? ""
+          : rawCadence;
+  return cadence ? `${family} ${cadence}` : family;
+}
+
 function LimitRow({
   window,
   now,
@@ -206,7 +230,7 @@ function LimitRow({
   const resetsIn = resetsAt > now ? formatDuration(resetsAt - now) : null;
   return (
     <UsageRow
-      label={shortWindowLabel(window.label)}
+      label={compactWindowLabel(window.label)}
       fill={used}
       tone={used >= 90 ? "error" : used >= 80 ? "warning" : null}
       color={color}
@@ -319,7 +343,7 @@ function UsageRow({
           ) : (
             <span className="flex items-center justify-end">
               <span className="w-8 text-end">{value}</span>
-              <span className="w-16 ps-1.5 text-start font-normal text-muted-foreground">
+              <span className="min-w-16 ps-1.5 text-start font-normal whitespace-nowrap text-muted-foreground">
                 {detail ? `· ${detail}` : ""}
               </span>
             </span>

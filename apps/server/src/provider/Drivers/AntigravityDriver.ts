@@ -424,9 +424,28 @@ export const AntigravityDriver: ProviderDriver<
       };
     });
 
+    // Only the fast native agy CLI refreshes keyring tokens on demand; never spawn the 1 GB PyInstaller bundle here.
+    const refreshKeyringToken = Effect.gen(function* () {
+      const executable = yield* installation.resolve(settings.binaryPath, processEnvironment);
+      if (executable.harnessPath !== null) return;
+      const processScope = yield* Scope.make();
+      yield* Effect.addFinalizer((exit) => Scope.close(processScope, exit));
+      yield* authFlow
+        .withProcess(
+          Scope.close(processScope, Exit.void),
+          Effect.gen(function* () {
+            const runtime = yield* makeDisposableRuntime({});
+            yield* runtime.initialize();
+            yield* runtime.request("authenticate", { methodId: auth.authMethod });
+          }),
+        )
+        .pipe(Effect.provideService(Scope.Scope, processScope));
+    }).pipe(Effect.scoped, Effect.timeout("15 seconds"), Effect.ignore);
+
     const usage = yield* makeAntigravityUsageProbe({
       profileDirectory,
       authMethod: auth.authMethod,
+      refreshKeyringToken,
     }).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),

@@ -806,4 +806,28 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       expect((yield* republished)?.usageLimits).toEqual(failed);
     }),
   );
+
+  it.effect("refreshUsage awaits the probe and recovers from unsupported limits", () =>
+    Effect.gen(function* () {
+      const unsupported: ServerProviderUsageLimits = {
+        checkedAt: "2026-10-09T12:00:00.000Z",
+        windows: [],
+        unavailable: { reason: "unsupported" },
+      };
+      const recovered: ServerProviderUsageLimits = {
+        checkedAt: "2026-10-09T12:05:00.000Z",
+        windows: [{ id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: 18 }],
+      };
+      const usage = yield* Ref.make(unsupported);
+      const harness = yield* makeHarness({ probeUsage: Ref.get(usage) });
+      const initial = yield* harness.nextPublish(
+        (snapshot) => snapshot.usageLimits?.unavailable?.reason === "unsupported",
+      );
+      yield* harness.initialize;
+      expect((yield* initial)?.usageLimits).toEqual(unsupported);
+      yield* Ref.set(usage, recovered);
+      yield* harness.provider.snapshot.refreshUsage!;
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits).toEqual(recovered);
+    }),
+  );
 });
