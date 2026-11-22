@@ -8,7 +8,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import {
   makeUnavailableUsageLimits,
@@ -142,6 +145,62 @@ const decodeKeyringStoredToken = Effect.fn("decodeKeyringStoredToken")(function*
     projectId,
   } satisfies DecodedKeyringToken;
 });
+
+// On macOS, read via Apple's system-signed /usr/bin/security instead of in-process @napi-rs/keyring
+// so ad-hoc signed / rebuilt local app bundles don't trigger a Keychain password prompt on every update.
+const readMacKeychainAntigravityToken = Effect.fn("readMacKeychainAntigravityToken")(function* (
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+) {
+  const handle = yield* spawner
+    .spawn(
+      ChildProcess.make(
+        "/usr/bin/security",
+        [
+          "find-generic-password",
+          "-s",
+          ANTIGRAVITY_KEYRING_SERVICE,
+          "-a",
+          ANTIGRAVITY_KEYRING_ACCOUNT,
+          "-w",
+        ],
+        { stdin: "ignore" },
+      ),
+    )
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new KeyringCredentialError({
+            detail: "Could not launch /usr/bin/security to read Antigravity credentials.",
+            cause,
+          }),
+      ),
+    );
+  const [stdout, , exitCode] = yield* Effect.all(
+    [
+      handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
+      handle.stderr.pipe(Stream.runDrain),
+      handle.exitCode,
+    ],
+    { concurrency: "unbounded" },
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new KeyringCredentialError({
+          detail: "Could not read Antigravity credentials from the macOS Keychain.",
+          cause,
+        }),
+    ),
+  );
+  const code = Number(exitCode);
+  if (code === 44) return Option.none<string>();
+  if (code !== 0) {
+    return yield* new KeyringCredentialError({
+      detail: `macOS Keychain lookup failed with exit code ${code}.`,
+    });
+  }
+  const trimmed = stdout.trim();
+  return trimmed ? Option.some(trimmed) : Option.none<string>();
+}, Effect.scoped);
 
 const readSystemAntigravityKeyringToken: Effect.Effect<
   Option.Option<string>,
@@ -314,12 +373,17 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   const path = yield* Path.Path;
   const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
   const crypto = yield* Digest.Digest;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
   const acpDirectory = path.join(input.profileDirectory, "antigravity-acp");
   const tokenPath = path.join(acpDirectory, "acp_token.json");
   const authStatePath = path.join(acpDirectory, "cache", "acp-auth-state.json");
-  const readKeyringToken = input.readKeyringToken ?? readSystemAntigravityKeyringToken;
+  const readKeyringToken =
+    input.readKeyringToken ??
+    (platform === "darwin"
+      ? readMacKeychainAntigravityToken(spawner)
+      : readSystemAntigravityKeyringToken);
   let cached:
     | { fingerprint: string; account: string; accessToken: string; expiresAt: number }
     | undefined;
