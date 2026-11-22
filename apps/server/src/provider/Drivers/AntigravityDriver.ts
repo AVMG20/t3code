@@ -284,7 +284,19 @@ export const AntigravityDriver: ProviderDriver<
       return {
         ...runtime,
         ...(executable.harnessPath === null
-          ? { setMode: (modeId: string) => runtime.setMode(antigravityCliSessionMode(modeId)) }
+          ? {
+              setMode: Effect.fn("AntigravityDriver.setCliMode")(function* (modeId: string) {
+                const mapped = antigravityCliSessionMode(modeId);
+                if (mapped === "auto") {
+                  const state = yield* runtime.getModeState;
+                  const advertised = state?.availableModes.map((mode) => mode.id) ?? [];
+                  if (advertised.length > 0 && !advertised.includes("auto")) {
+                    return yield* runtime.setMode("default");
+                  }
+                }
+                return yield* runtime.setMode(mapped);
+              }),
+            }
           : {}),
         start: () =>
           runtime
@@ -417,7 +429,7 @@ export const AntigravityDriver: ProviderDriver<
         },
         authMethods: [{ id: "oauth-personal", name: "Log in with Google" }],
         agentInfo: {
-          name: "antigravity-acp",
+          name: executable.harnessPath === null ? "Antigravity ACP Server" : "antigravity-acp",
           title: "Google Antigravity",
           version: executable.version ?? "unknown",
         },

@@ -348,7 +348,42 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     Effect.gen(function* () {
       const harness = yield* makeHarness();
       yield* harness.initialize;
-      // Antigravity has no automatic review; the shared ACP policy would approve every request.
+      // Legacy runtime has no automatic review; the shared ACP policy would approve every request.
+      expect((yield* harness.provider.snapshot.getSnapshot).supportedRuntimeModes).toEqual([
+        "approval-required",
+        "auto-accept-edits",
+        "full-access",
+      ]);
+    }),
+  );
+
+  it.effect("offers Auto for the Antigravity CLI runtime and tracks session mode support", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const cliInit = {
+        ...initializeResult,
+        agentInfo: { name: "Antigravity ACP Server", version: "1.5.14" },
+      };
+      yield* Ref.set(harness.probe, Effect.succeed(cliInit));
+      yield* harness.initialize;
+      expect((yield* harness.provider.snapshot.getSnapshot).supportedRuntimeModes).toEqual([
+        "approval-required",
+        "auto-accept-edits",
+        "auto",
+        "full-access",
+      ]);
+      // If a session explicitly advertises modes without `auto`, drop Auto from supported modes.
+      yield* harness.provider.onSessionStarted({
+        ...started,
+        initializeResult: cliInit,
+        sessionSetupResult: {
+          ...sessionSetupResult,
+          modes: {
+            currentModeId: "default",
+            availableModes: [{ id: "default", name: "Default" }],
+          },
+        },
+      });
       expect((yield* harness.provider.snapshot.getSnapshot).supportedRuntimeModes).toEqual([
         "approval-required",
         "auto-accept-edits",

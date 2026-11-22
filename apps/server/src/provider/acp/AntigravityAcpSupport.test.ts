@@ -13,11 +13,15 @@ import * as Stream from "effect/Stream";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import {
-  applyAntigravityAcpModelSelection,
   antigravityClientInfo,
+  antigravityPermissionDisposition,
+  antigravityRuntimeModeForSessionMode,
   antigravitySessionMeta,
+  antigravitySessionModeForPolicy,
+  applyAntigravityAcpModelSelection,
   buildAntigravityPrompt,
   isQualifiedAntigravityRelease,
 } from "./AntigravityAcpSupport.ts";
@@ -98,6 +102,42 @@ describe("Antigravity release gates", () => {
       expect(antigravityClientInfo(version).name).toBe(ownName ? "t3-code" : "zed");
     },
   );
+});
+
+describe("Antigravity runtime mode policy", () => {
+  const permissionRequest = (
+    kind: "edit" | "execute",
+  ): EffectAcpSchema.RequestPermissionRequest => ({
+    sessionId: "session-1",
+    toolCall: { toolCallId: "tool-1", kind },
+    options: [
+      { optionId: "allow", name: "Allow", kind: "allow_once" },
+      { optionId: "reject", name: "Reject", kind: "reject_once" },
+    ],
+  });
+
+  it("maps native Auto mode and keeps escalated requests asking the user", () => {
+    const autoPolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode: "auto",
+      interactionMode: "default",
+      cwd: "/workspace",
+    });
+    expect(antigravitySessionModeForPolicy(autoPolicy)).toBe("auto");
+    expect(antigravityPermissionDisposition(autoPolicy, permissionRequest("edit"))).toBe("ask");
+    expect(antigravityPermissionDisposition(autoPolicy, permissionRequest("execute"))).toBe("ask");
+
+    const confinedPolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode: "auto",
+      interactionMode: "default",
+      cwd: "/workspace",
+      sandboxPolicy: { type: "readOnly" },
+    });
+    expect(antigravitySessionModeForPolicy(confinedPolicy)).toBe("default");
+    expect(antigravityPermissionDisposition(confinedPolicy, permissionRequest("edit"))).toBe("ask");
+
+    expect(antigravityRuntimeModeForSessionMode("auto")).toBe("auto");
+    expect(antigravityRuntimeModeForSessionMode("accept-edits")).toBe("auto-accept-edits");
+  });
 });
 
 describe("applyAntigravityAcpModelSelection", () => {

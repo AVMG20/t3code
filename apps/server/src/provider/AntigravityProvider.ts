@@ -4,6 +4,7 @@ import {
   ProviderDriverKind,
   type AntigravitySettings,
   type ProviderSetupError,
+  type RuntimeMode,
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
@@ -40,6 +41,17 @@ import { resolveUsageLimitsAfterProbe } from "@t3tools/provider-core/server/usag
 import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
 
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
+const LEGACY_RUNTIME_MODES = [
+  "approval-required",
+  "auto-accept-edits",
+  "full-access",
+] as const satisfies ReadonlyArray<RuntimeMode>;
+const AUTO_RUNTIME_MODES = [
+  "approval-required",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+] as const satisfies ReadonlyArray<RuntimeMode>;
 const MAX_WORKSPACE_SNAPSHOTS = 32;
 const HEALTH_CHECK_TIMEOUT_MS = 90_000;
 const SIGN_IN_MESSAGE = "Sign in with Google to use Antigravity.";
@@ -52,8 +64,28 @@ const PublishingUsage = Context.Reference<boolean>("t3/provider/AntigravityPubli
 
 type SessionSetupResult = Pick<
   AcpSessionRuntime.AcpSessionRuntimeStartResult["sessionSetupResult"],
-  "configOptions" | "models"
+  "configOptions" | "models" | "modes"
 >;
+
+function sessionSupportsAutoMode(setup: SessionSetupResult): boolean | undefined {
+  const availableModes = setup.modes?.availableModes;
+  if (availableModes && availableModes.length > 0) {
+    return availableModes.some((mode) => mode.id === "auto");
+  }
+  const modeOption = setup.configOptions?.find(
+    (option) => option.id === "mode" || option.category === "mode",
+  );
+  if (modeOption?.type === "select") {
+    return modeOption.options
+      .flatMap((entry) => ("value" in entry ? [entry] : entry.options))
+      .some((option) => option.value === "auto");
+  }
+  return undefined;
+}
+
+function runtimeModesForAutoSupport(supportsAuto: boolean): ReadonlyArray<RuntimeMode> {
+  return supportsAuto ? [...AUTO_RUNTIME_MODES] : [...LEGACY_RUNTIME_MODES];
+}
 
 type ThinkingConfig = NonNullable<ReturnType<typeof antigravityThinkingConfig>>;
 
@@ -215,6 +247,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   // Preserve disk-discovered skills when callbacks replace workspace commands; the registry will not rescan them.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
   const thinkingLevels = new Map<string, ThinkingConfig | null>();
+  let sessionAutoMode: boolean | undefined;
   const observeThinkingLevels = (
     configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
   ) => {
@@ -341,6 +374,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             : {}),
           ...(initialized !== undefined
             ? {
+                supportedRuntimeModes: runtimeModesForAutoSupport(
+                  sessionAutoMode ?? initialized.agentInfo?.name === "Antigravity ACP Server",
+                ),
                 supportsTextGeneration:
                   supportsTextGeneration && draft.auth.status !== "unauthenticated",
               }
@@ -381,6 +417,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   ) {
     if (!settings.enabled) return;
     observeThinkingLevels(started.sessionSetupResult.configOptions);
+    const observedAuto = sessionSupportsAutoMode(started.sessionSetupResult);
+    if (observedAuto !== undefined) sessionAutoMode = observedAuto;
     const before = yield* SubscriptionRef.get(metadata);
     const supportsTextGeneration = yield* options.supportsTextGeneration;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
@@ -407,6 +445,10 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             label: options.auth?.label ?? "Google account",
           },
           checkedAt: updatedAt,
+          supportedRuntimeModes: runtimeModesForAutoSupport(
+            sessionAutoMode ??
+              started.initializeResult.agentInfo?.name === "Antigravity ACP Server",
+          ),
           models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
           supportsTextGeneration,
           ...(cwd
@@ -432,10 +474,21 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
   ) {
     observeThinkingLevels(configOptions);
+    const observedAuto = sessionSupportsAutoMode({ configOptions });
+    if (observedAuto !== undefined) sessionAutoMode = observedAuto;
     const models = buildAntigravityModelsFromSession({ configOptions }, thinkingLevels);
     yield* SubscriptionRef.update(metadata, (state) => {
       if (state.draft.auth.status !== "authenticated") return state;
-      return { ...state, draft: { ...state.draft, models } };
+      return {
+        ...state,
+        draft: {
+          ...state.draft,
+          ...(observedAuto === undefined
+            ? {}
+            : { supportedRuntimeModes: runtimeModesForAutoSupport(observedAuto) }),
+          models,
+        },
+      };
     });
   });
 
@@ -503,6 +556,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     );
     discoveredSkills.clear();
     thinkingLevels.clear();
+    sessionAutoMode = undefined;
   });
 
   const snapshotForCwd = Effect.fn("AntigravityProvider.snapshotForCwd")(function* (

@@ -24,6 +24,11 @@ import {
   makeAntigravityStdoutTransform,
 } from "../antigravityAuthSupport.ts";
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import {
+  acpPermissionDisposition,
+  type AcpPermissionDisposition,
+} from "@t3tools/provider-acp/server/clientPolicy";
+import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import packageJson from "../../../package.json" with { type: "json" };
 import { normalizeAntigravitySessionUpdate } from "./AntigravityProtocol.ts";
 
@@ -171,33 +176,62 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
   return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(Effect.provide(context));
 });
 
-export function antigravityPermissionMode(runtimeMode: RuntimeMode): string {
-  switch (runtimeMode) {
+/**
+ * Maps T3's runtime policy to Antigravity's ACP mode. Explicit approval or sandbox policies stay in
+ * `default` so native Auto mode cannot approve writes the policy meant to confine.
+ */
+export function antigravitySessionModeForPolicy(
+  policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+): string {
+  switch (policy.runtimeMode) {
     case "full-access":
       return "yolo";
     case "auto-accept-edits":
       return "auto_edit";
     case "auto":
+      return policy.approvalPolicy === undefined && policy.sandboxPolicy === undefined
+        ? "auto"
+        : "default";
     case "approval-required":
       return "default";
   }
 }
 
 /**
- * The agy CLI rejects the managed runtime's `yolo` and `auto_edit`. It stays in `default`, where
- * it asks before acting and T3 answers from the live runtime policy, so permission changes apply
- * on the next turn without a restart.
+ * In native Auto mode Antigravity runs its own automatic safety review and only asks for actions it
+ * refused itself, so every request it sends must ask the user instead of falling through to the
+ * shared ACP policy's default allow.
+ */
+export function antigravityPermissionDisposition(
+  policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+  request: EffectAcpSchema.RequestPermissionRequest,
+): AcpPermissionDisposition {
+  return antigravitySessionModeForPolicy(policy) === "auto"
+    ? "ask"
+    : acpPermissionDisposition(
+        policy.runtimeMode === "auto" ? { ...policy, runtimeMode: "approval-required" } : policy,
+        request,
+      );
+}
+
+/**
+ * The agy CLI rejects the managed runtime's `yolo` and `auto_edit`. Those stay in `default`, where
+ * it asks before acting and T3 answers from the live runtime policy, while `auto` passes through to
+ * the CLI's native Auto mode.
  */
 export function antigravityCliSessionMode(modeId: string): string {
   return modeId === "yolo" || modeId === "auto_edit" ? "default" : modeId;
 }
 
-/** The runtime mode an Antigravity session mode grants; the inverse of `antigravityPermissionMode`. */
+/** The runtime mode an Antigravity session mode grants; the inverse of `antigravitySessionModeForPolicy`. */
 export function antigravityRuntimeModeForSessionMode(modeId: string): RuntimeMode | undefined {
   switch (modeId) {
     case "yolo":
       return "full-access";
+    case "auto":
+      return "auto";
     case "auto_edit":
+    case "accept-edits":
       return "auto-accept-edits";
     case "default":
       return "approval-required";
