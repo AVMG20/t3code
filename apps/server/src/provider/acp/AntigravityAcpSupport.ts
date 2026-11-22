@@ -7,6 +7,7 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -197,17 +198,34 @@ export function antigravitySessionModeForPolicy(
   }
 }
 
+/** Antigravity names MCP calls `mcp_<server>_<tool>` and titles them `Run <name>`. */
+const ANTIGRAVITY_T3_MCP_CALL = /^(?:Run )?mcp_t3-code_(?<tool>[A-Za-z0-9_]+)$/;
+
+function isAntigravityT3McpCall(request: EffectAcpSchema.RequestPermissionRequest): boolean {
+  const toolCall = request.toolCall as { readonly name?: unknown; readonly title?: unknown };
+  return [toolCall.name, toolCall.title].some((candidate) => {
+    const tool =
+      typeof candidate === "string"
+        ? ANTIGRAVITY_T3_MCP_CALL.exec(candidate.trim())?.groups?.tool
+        : undefined;
+    return tool !== undefined && T3_MCP_TOOL_NAMES.has(tool);
+  });
+}
+
 /**
  * In native Auto mode Antigravity runs its own automatic safety review and only asks for actions it
- * refused itself, so every request it sends must ask the user instead of falling through to the
- * shared ACP policy's default allow.
+ * refused itself, so those requests ask the user instead of falling through to the shared ACP
+ * policy's default allow. It also asks before every MCP call; T3's own tools are allowed, as Claude
+ * pre-approves them, because T3's MCP endpoint enforces their scope.
  */
 export function antigravityPermissionDisposition(
   policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
   request: EffectAcpSchema.RequestPermissionRequest,
 ): AcpPermissionDisposition {
   return antigravitySessionModeForPolicy(policy) === "auto"
-    ? "ask"
+    ? isAntigravityT3McpCall(request)
+      ? "allow"
+      : "ask"
     : acpPermissionDisposition(
         policy.runtimeMode === "auto" ? { ...policy, runtimeMode: "approval-required" } : policy,
         request,

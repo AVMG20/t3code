@@ -125,6 +125,25 @@ describe("Antigravity runtime mode policy", () => {
     expect(antigravitySessionModeForPolicy(autoPolicy)).toBe("auto");
     expect(antigravityPermissionDisposition(autoPolicy, permissionRequest("edit"))).toBe("ask");
     expect(antigravityPermissionDisposition(autoPolicy, permissionRequest("execute"))).toBe("ask");
+    const mcpRequest = (name: string): EffectAcpSchema.RequestPermissionRequest => ({
+      ...permissionRequest("execute"),
+      toolCall: {
+        toolCallId: "tool-2",
+        kind: "other",
+        title: `Run ${name}`,
+        name,
+      } as EffectAcpSchema.RequestPermissionRequest["toolCall"],
+    });
+    // Auto asks before every MCP call: T3's own tools go through, other servers still ask.
+    expect(
+      antigravityPermissionDisposition(autoPolicy, mcpRequest("mcp_t3-code_preview_open")),
+    ).toBe("allow");
+    expect(antigravityPermissionDisposition(autoPolicy, mcpRequest("mcp_t3-code_not_a_tool"))).toBe(
+      "ask",
+    );
+    expect(antigravityPermissionDisposition(autoPolicy, mcpRequest("mcp_other_preview_open"))).toBe(
+      "ask",
+    );
 
     const confinedPolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
       runtimeMode: "auto",
