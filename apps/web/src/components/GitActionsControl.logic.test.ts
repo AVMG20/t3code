@@ -304,13 +304,27 @@ describe("resolveUncommittedTotals", () => {
         status({
           branchChanges: { baseRef: "origin/main", insertions: 40_000, deletions: 300 },
           workingTree: {
-            files: [{ path: "a.ts", insertions: 5, deletions: 1 }],
+            files: [
+              { path: "a.ts", insertions: 4, deletions: 1 },
+              { path: "README.md", insertions: 1, deletions: 0 },
+            ],
             insertions: 5,
             deletions: 1,
           },
         }),
       ),
-      { insertions: 5, deletions: 1, baseRef: null },
+      {
+        insertions: 5,
+        deletions: 1,
+        baseRef: null,
+        breakdown: {
+          code: { additions: 4, deletions: 1 },
+          tests: { additions: 0, deletions: 0 },
+          mocks: { additions: 0, deletions: 0 },
+          generated: { additions: 0, deletions: 0 },
+          docs: { additions: 1, deletions: 0 },
+        },
+      },
     );
   });
 
@@ -327,10 +341,21 @@ describe("resolveUncommittedTotals", () => {
         truncated: false,
         files: [
           { path: "a.ts", previousPath: null, additions: 4, deletions: 1 },
-          { path: "b.ts", previousPath: null, additions: 2, deletions: 0 },
+          { path: "a.test.ts", previousPath: null, additions: 2, deletions: 0 },
         ],
       }),
-      { insertions: 6, deletions: 1, baseRef: null },
+      {
+        insertions: 6,
+        deletions: 1,
+        baseRef: null,
+        breakdown: {
+          code: { additions: 4, deletions: 1 },
+          tests: { additions: 2, deletions: 0 },
+          mocks: { additions: 0, deletions: 0 },
+          generated: { additions: 0, deletions: 0 },
+          docs: { additions: 0, deletions: 0 },
+        },
+      },
     );
   });
 });

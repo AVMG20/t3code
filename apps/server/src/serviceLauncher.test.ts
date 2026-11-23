@@ -38,6 +38,7 @@ import {
   compareExactServiceVersions,
   decodeServiceState,
   isExactServiceVersion,
+  decodeServiceUnit,
   disabledServiceTask,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_PROTOCOL,
@@ -469,7 +470,7 @@ setInterval(() => {}, 1_000);
       // Task Scheduler's copy: `t3 doctor` disabled it to keep the service stopped.
       let task = disabledServiceTask(unit.replace("1.1.0", "1.0.0"));
       const schtasks = async (...args: ReadonlyArray<string>) => {
-        if (args[0] === "/Create") task = await NodeFSP.readFile(args[2] ?? "", "utf8");
+        if (args[0] === "/Create") task = decodeServiceUnit(await NodeFSP.readFile(args[2] ?? ""));
         return { stdout: task };
       };
 
@@ -552,7 +553,7 @@ setInterval(() => {}, 1_000);
         );
         yield* fs.writeFileString(
           path.join(bin, "systemctl"),
-          `#!/bin/sh\necho reload >> '${path.join(root, "reloads")}'\n`,
+          `#!/bin/sh\n[ "$*" = "--user daemon-reload" ] && echo reload >> '${path.join(root, "reloads")}'\n`,
         );
         yield* fs.chmod(path.join(bin, "busctl"), 0o755);
         yield* fs.chmod(path.join(bin, "systemctl"), 0o755);
