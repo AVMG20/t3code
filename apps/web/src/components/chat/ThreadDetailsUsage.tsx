@@ -32,7 +32,12 @@ import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
-import { nextPoolReset, poolSources, resolveThreadDetailsLimits } from "./ThreadDetailsUsage.logic";
+import {
+  nextPoolReset,
+  poolSources,
+  resolveThreadDetailsLimits,
+  resolveThreadHttpQuotas,
+} from "./ThreadDetailsUsage.logic";
 
 const PACE_LABEL: Record<LimitPace, string> = {
   ahead: msg("Ahead of pace"),
@@ -76,7 +81,8 @@ export function ThreadDetailsUsage({
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
   const resolved = resolveThreadDetailsLimits(providerInstanceId, model, providers, sources, now);
-  if (!resolved || providerInstanceId === null) return null;
+  const quotas = resolveThreadHttpQuotas(providerInstanceId, sources);
+  if ((!resolved && quotas.length === 0) || providerInstanceId === null) return null;
   const provider = providers.find((entry) => entry.instanceId === providerInstanceId);
   const driver = provider?.driver;
   const color =
@@ -121,11 +127,15 @@ export function ThreadDetailsUsage({
       </div>
       {/* Fixed label and value widths keep the bars the same length for every profile. */}
       <div className="grid grid-cols-[4.5rem_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
-        {resolved.kind === "pool" ? (
-          resolved.windows.map((window) => <PoolRow key={window.id} window={window} now={now} />)
-        ) : (
-          <InstanceRows limits={resolved.limits} now={now} color={color} driver={driver} />
-        )}
+        {resolved?.kind === "pool"
+          ? resolved.windows.map((window) => <PoolRow key={window.id} window={window} now={now} />)
+          : resolved &&
+            (quotas.length === 0 || limitsNotice(resolved.limits) === null) && (
+              <InstanceRows limits={resolved.limits} now={now} color={color} driver={driver} />
+            )}
+        {quotas.map(({ key, accountLabel, window }) => (
+          <LimitRow key={key} window={window} now={now} color={color} accountLabel={accountLabel} />
+        ))}
       </div>
     </ThreadDetailsSection>
   );
@@ -256,10 +266,12 @@ function LimitRow({
   window,
   now,
   color,
+  accountLabel,
 }: {
   readonly window: ServerProviderUsageWindow;
   readonly now: number;
   readonly color: string;
+  readonly accountLabel?: string;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -287,6 +299,7 @@ function LimitRow({
           <span className="text-foreground">
             {gt("{label}: {used}% used", { label: window.label, used })}
           </span>
+          {accountLabel ? <span className="text-muted-foreground">{accountLabel}</span> : null}
           {window.resetsAt && resetsIn ? (
             <span className="text-muted-foreground">
               {gt("Resets in {duration} · {time}", {
