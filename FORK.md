@@ -46,6 +46,13 @@ The Changes row counts only uncommitted changes, labelled "Uncommitted". The dif
 - `apps/web/src/components/GitActionsControl.logic.ts` (`resolveUncommittedTotals`), `GitActionsControl.tsx`
 - `apps/web/src/diffPanelStore.ts` (`DEFAULT_SELECTION`), `hooks/useProactivePanels.ts`, `chat/useRightPanelActions.ts`
 
+### Telemetry is opt-in
+
+Product analytics (PostHog via `ingest.t3.codes`) and relay connection tracing are off unless `T3CODE_TELEMETRY_ENABLED=true`. Upstream turns both on outside CI.
+
+- `apps/server/src/telemetry/AnalyticsService.ts` (`enabledByDefault`, `enabledAtStartup`)
+- `packages/shared/src/otelEnvironment.ts` (`isRelayTracingEnabled`), plus its tests and `apps/server/src/cloud/relayTracing.test.ts`
+
 ## Dropped in favour of upstream
 
 Don't bring these back. Upstream now does them itself.

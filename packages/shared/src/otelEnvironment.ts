@@ -353,9 +353,8 @@ export const isRelayTracingEnabled = (env: Readonly<Record<string, string | unde
   }).pipe(
     Effect.map(
       ({ telemetry, t3, spec }) =>
-        (telemetry.value ?? !isCiEnvironment(env)) &&
-        !isDoNotTrackSet(env) &&
-        !(t3.value ?? spec.value ?? false),
+        // avmg fork: relay tracing is opt-in, like product analytics.
+        (telemetry.value ?? false) && !isDoNotTrackSet(env) && !(t3.value ?? spec.value ?? false),
     ),
     Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))),
     Effect.orDie,
