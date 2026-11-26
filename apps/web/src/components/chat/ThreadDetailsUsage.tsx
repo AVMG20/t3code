@@ -11,7 +11,6 @@ import {
   type LimitPoolWindow,
   paceOf,
   remainingPercent,
-  sortProviderUsageWindows,
 } from "@t3tools/shared/usageLimits";
 import { formatDuration, limitsNotice } from "@t3tools/shared/usageLimitsCopy";
 import { Link } from "@tanstack/react-router";
@@ -131,7 +130,7 @@ export function ThreadDetailsUsage({
           ? resolved.windows.map((window) => <PoolRow key={window.id} window={window} now={now} />)
           : resolved &&
             (quotas.length === 0 || limitsNotice(resolved.limits) === null) && (
-              <InstanceRows limits={resolved.limits} now={now} color={color} driver={driver} />
+              <InstanceRows limits={resolved.limits} now={now} color={color} />
             )}
         {quotas.map(({ key, accountLabel, window }) => (
           <LimitRow key={key} window={window} now={now} color={color} accountLabel={accountLabel} />
@@ -145,12 +144,10 @@ function InstanceRows({
   limits,
   now,
   color,
-  driver,
 }: {
   readonly limits: ServerProviderUsageLimits;
   readonly now: number;
   readonly color: string;
-  readonly driver: ServerProvider["driver"] | undefined;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -167,7 +164,7 @@ function InstanceRows({
       />
     );
   }
-  return sortProviderUsageWindows(driver, limits.windows).map((window) => (
+  return limits.windows.map((window) => (
     <LimitRow key={window.id} window={window} now={now} color={color} />
   ));
 }

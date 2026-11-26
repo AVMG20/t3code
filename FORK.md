@@ -16,16 +16,15 @@ The Claude provider has a **Usage URL** setting (`usageUrl`). When Claude runs t
 
 ### Usage card in thread details
 
-The card shows the profile name in its accent colour (click to open or close the usage panel above the composer), a refresh button, and bars that fill as quota is **used** (upstream shows % left), with the reset time next to each value. Window labels are shortened (`Weekly · Fable` → `Fable`, `Gemini · 5-hour` → `Gemini 5h`). Upstream's shared-pool rows (`PoolRow`) are kept as upstream wrote them.
+The card shows the profile name in its accent colour (click to open or close the usage panel above the composer), a refresh button, and bars that fill as quota is **used** (upstream shows % left), with the reset time next to each value. Window labels are shortened (`Weekly · Fable` → `Fable`). Upstream's shared-pool rows (`PoolRow`) are kept as upstream wrote them.
 
 - `apps/web/src/components/chat/ThreadDetailsUsage.tsx`: rebuilt on top of upstream's version in the Nov 2026 merge. Take upstream's file, then put back the header, `color`, `detail`, `compactWindowLabel` and the used-% `LimitRow`.
 - `apps/web/src/components/usage/UsageLimits.tsx`: "% used" instead of "% left", `shortWindowLabel`
 - `apps/web/src/components/chat/useUsageLimitsPanel.ts` (`toggle`), `ChatView.tsx` (passes `environmentId` and `onToggleLimits`)
-- `packages/shared/src/usageLimits.ts` (`sortProviderUsageWindows`)
 
 ### Usage refresh
 
-- **Refresh button:** `refreshProviders` with `{ instanceId, usage: true }` refetches one instance's limits (`packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `snapshot.refreshUsage` in `ClaudeProvider.ts` and `AntigravityProvider.ts`).
+- **Refresh button:** `refreshProviders` with `{ instanceId, usage: true }` refetches one instance's limits (`packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `snapshot.refreshUsage` in `ClaudeProvider.ts`).
 - **Scheduler:** usage refreshes as turns start and settle (`apps/server/src/provider/usageRefreshScheduler.ts`, hooked in `orchestration-v2/ProviderEventIngestor.ts`).
 
 ### Remember last model per project
@@ -53,6 +52,7 @@ Don't bring these back. Upstream now does them itself.
 
 - **Antigravity native Auto mode.** Ours was `a62e16068b` and `1caa1f5824`; upstream has its own (#39378, #39822).
 - **Antigravity usage limits from the CLI keyring / macOS keychain.** Ours was `698ddc0a36` and `d49c3b334e`. Upstream keeps Google sign-ins out of the keyring and reads `antigravity-oauth-token`.
+- **Antigravity usage limits altogether.** Upstream stopped reading them from Google's internal APIs (#43026), so our Antigravity usage refresh and window sorting (`sortProviderUsageWindows`) went with it.
 - **Antigravity background commands that rewake the thread.** Fixed upstream (#39989, #39806, #40858, #39767).
 
 ## Building the desktop app
